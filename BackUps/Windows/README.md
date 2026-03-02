@@ -1,81 +1,22 @@
-# Blue Team Backup & Restore Scripts
-## Quick Reference
+# Blue Team Backup & Restore — Windows
+> Run all scripts as **Administrator** in PowerShell 5.1+. Windows Server 2016/2019/2022 or Windows 10/11.
 
 ---
 
-### LINUX SCRIPTS  (run as root / sudo)
-```
-linux/
-├── 00_master.sh              # Orchestrator — run all backups or restore menu
-├── 01_backup_binaries.sh     # Critical system binaries + hash verification
-├── 02_backup_pam.sh          # PAM configs, libraries, reinstall option
-├── 03_backup_sshd.sh         # sshd_config, host keys, authorized_keys + audit
-├── 04_backup_smb.sh          # Samba config, TDB databases, user export
-├── 05_backup_webserver.sh    # Apache/Nginx/Lighttpd config (auto-detected)
-├── 06_backup_webcontent.sh   # Web root files + webshell scanner
-├── 07_backup_mysql.sh        # MySQL/MariaDB dumps, users, grants + audit
-└── 08_backup_postgres.sh     # PostgreSQL dumps, globals, config + audit
-```
+## Quick Start
 
-**Setup (one-time):**
-```bash
-sudo chmod +x linux/*.sh
-sudo ./linux/00_master.sh backup     # Full backup
-sudo ./linux/00_master.sh restore    # Interactive restore
-sudo ./linux/00_master.sh status     # Show inventory
-```
-
-**Individual scripts support:**
-```bash
-sudo ./linux/01_backup_binaries.sh   {backup|restore|verify}
-sudo ./linux/02_backup_pam.sh        {backup|restore|reinstall|verify}
-sudo ./linux/03_backup_sshd.sh       {backup|restore|audit}
-sudo ./linux/04_backup_smb.sh        {backup|restore|verify}
-sudo ./linux/05_backup_webserver.sh  {backup|restore|audit}
-sudo ./linux/06_backup_webcontent.sh {backup|restore|scan}
-sudo ./linux/07_backup_mysql.sh      {backup|restore|verify|audit}
-sudo ./linux/08_backup_postgres.sh   {backup|restore|verify|audit}
-```
-
-**Backup location:** `/opt/blueteam/backups/<service>/<timestamp>/`
-**Logs:** `/var/log/blueteam_<service>.log`
-
----
-
-### WINDOWS SCRIPTS  (run as Administrator in PowerShell)
-```
-windows/
-├── 00_Master.ps1             # Orchestrator — run all or restore menu
-├── 01_Backup-Binaries.ps1    # System32 critical binaries + hash verification
-├── 02_Backup-SSH.ps1         # OpenSSH Server config, authorized_keys + audit
-├── 03_Backup-SMB.ps1         # SMB shares, ACLs, server config + audit
-├── 04_Backup-WebServer.ps1   # IIS config via appcmd + WebAdministration
-├── 05_Backup-WebContent.ps1  # IIS web roots + webshell scanner
-├── 06_Backup-MySQL.ps1       # MySQL/MariaDB dumps, users, grants + audit
-└── 07_Backup-Postgres.ps1    # PostgreSQL dumps, globals, config + audit
-```
-
-**Setup (one-time — allow script execution):**
 ```powershell
+# One-time setup — allow local scripts to run
 Set-ExecutionPolicy RemoteSigned -Scope LocalMachine
-```
 
-**Usage:**
-```powershell
-.\windows\00_Master.ps1 -Action backup
-.\windows\00_Master.ps1 -Action restore
-.\windows\00_Master.ps1 -Action status
-```
+# Full backup of all services
+.\00_Master.ps1 -Action backup
 
-**Individual scripts:**
-```powershell
-.\windows\01_Backup-Binaries.ps1   -Action {backup|restore|verify}
-.\windows\02_Backup-SSH.ps1        -Action {backup|restore|audit}
-.\windows\03_Backup-SMB.ps1        -Action {backup|restore|audit}
-.\windows\04_Backup-WebServer.ps1  -Action {backup|restore|audit}
-.\windows\05_Backup-WebContent.ps1 -Action {backup|restore|scan}
-.\windows\06_Backup-MySQL.ps1      -Action {backup|restore|verify|audit}
-.\windows\07_Backup-Postgres.ps1   -Action {backup|restore|verify|audit}
+# Interactive restore menu
+.\00_Master.ps1 -Action restore
+
+# Show backup inventory and sizes
+.\00_Master.ps1 -Action status
 ```
 
 **Backup location:** `C:\BlueteamBackups\<service>\<timestamp>\`
@@ -83,127 +24,168 @@ Set-ExecutionPolicy RemoteSigned -Scope LocalMachine
 
 ---
 
-### DATABASE SCRIPT SETUP
+## Script Reference
 
-#### MySQL / MariaDB — Credential File (REQUIRED before first run)
+```
+windows/
+├── 00_Master.ps1             Orchestrator — runs all backups or restore menu
+├── 01_Backup-Binaries.ps1    System32 critical binaries + tamper detection
+├── 02_Backup-SSH.ps1         OpenSSH Server config, host keys, authorized_keys
+├── 03_Backup-SMB.ps1         SMB shares, ACLs, server config + audit
+├── 04_Backup-WebServer.ps1   IIS configuration via appcmd + WebAdministration
+├── 05_Backup-WebContent.ps1  IIS web root files + webshell scanner
+├── 06_Backup-MySQL.ps1       MySQL/MariaDB dumps, user grants + audit
+└── 07_Backup-Postgres.ps1    PostgreSQL dumps, globals, config + audit
+```
 
-**Linux** — create `/root/.my.cnf`:
+### Actions per script
+
+| Script | Actions |
+|---|---|
+| `00_Master.ps1` | `backup` `restore` `status` |
+| `01_Backup-Binaries.ps1` | `backup` `restore` `verify` |
+| `02_Backup-SSH.ps1` | `backup` `restore` `audit` |
+| `03_Backup-SMB.ps1` | `backup` `restore` `audit` |
+| `04_Backup-WebServer.ps1` | `backup` `restore` `audit` |
+| `05_Backup-WebContent.ps1` | `backup` `restore` `scan` |
+| `06_Backup-MySQL.ps1` | `backup` `restore` `verify` `audit` |
+| `07_Backup-Postgres.ps1` | `backup` `restore` `verify` `audit` |
+
+---
+
+## What Each Script Backs Up
+
+**01 — Binaries**
+Copies critical System32 binaries (`cmd.exe`, `powershell.exe`, `net.exe`, `sc.exe`,
+`certutil.exe`, `sshd.exe`, etc.) preserving directory structure. Saves a JSON
+SHA-256 manifest. `verify` compares live binaries against the manifest to detect
+replacement or tampering.
+
+**02 — SSH (OpenSSH Server)**
+Backs up `%ProgramData%\ssh` (sshd_config, host keys, administrators_authorized_keys),
+per-user `authorized_keys` in `C:\Users\*\.ssh\`, service start configuration, and
+firewall rules. Restricts backup permissions to Administrators only (host keys are
+sensitive). Runs a security audit after backup checking for dangerous settings,
+suspicious Match blocks, and non-admin ACL entries on `administrators_authorized_keys`.
+> ⚠️ Always verify SSH in a **new session** before closing the current one after a restore.
+
+**03 — SMB**
+Exports all share definitions, ACLs (`Get-SmbShareAccess`), SMB server configuration,
+and NTFS ACL snapshots for share paths. Flags SMB1 (EternalBlue risk) and disabled
+SMB signing. Restore recreates missing shares and re-applies server configuration.
+> ⚠️ ACL restore is not fully automated — verify share permissions manually after restore.
+
+**04 — Web Server (IIS)**
+Uses `appcmd.exe add backup` (the native IIS backup method) plus direct config file
+copy of `%SystemRoot%\System32\inetsrv\config`. Also exports site definitions, app
+pools, virtual directories, and SSL bindings as JSON via the WebAdministration module.
+Audit checks directory browsing, HTTP-only sites, LocalSystem app pools, and the
+`X-Powered-By` header.
+
+**05 — Web Content**
+Detects IIS site physical paths automatically via `Get-WebSite`. Backs up using
+`Robocopy /COPYALL` to preserve timestamps and metadata. After backup, scans for
+ASP/ASPX webshell patterns (`eval()`, `ProcessStartInfo`, `net user /add`, etc.),
+executables in the web root, PHP files (unusual on IIS — flag as suspicious), and
+recently modified files. Integrity checks file hashes against the backup.
+
+**06 — MySQL / MariaDB**
+Produces three backup artefacts: a full `--all-databases` dump, per-database dumps
+(for surgical single-DB restore), and a separate users/grants file. Uses .NET GZip
+compression. Audit checks anonymous users, empty passwords, `root@%`, `FILE`
+privilege abuse, and `bind-address` exposure.
+
+**07 — PostgreSQL**
+Produces: a globals dump (roles, tablespaces), a full cluster dump, and per-database
+`pg_dump` files in custom format (`.dump`). Also backs up `postgresql.conf`,
+`pg_hba.conf`, and `pg_ident.conf`. Audit checks superusers, passwordless login
+roles, `trust` auth in pg_hba, SSL status, `listen_addresses`, and PUBLIC write grants.
+
+---
+
+## Database Credential Setup
+
+### MySQL / MariaDB
+Create `C:\ProgramData\blueteam\mysql_backup.cnf` before running `06_Backup-MySQL.ps1`:
 ```ini
 [client]
 user=root
 password=yourpassword
 ```
-```bash
-chmod 600 /root/.my.cnf
-```
-
-**Windows** — create `C:\ProgramData\blueteam\mysql_backup.cnf`:
-```ini
-[client]
-user=root
-password=yourpassword
-```
+Then restrict permissions:
 ```powershell
-icacls "C:\ProgramData\blueteam\mysql_backup.cnf" /inheritance:r /grant "Administrators:F"
+New-Item -ItemType Directory -Path "C:\ProgramData\blueteam" -Force | Out-Null
+icacls "C:\ProgramData\blueteam\mysql_backup.cnf" /inheritance:r /grant "Administrators:F" /grant "SYSTEM:F"
 ```
 
-#### PostgreSQL — Credential Setup
+### PostgreSQL
+Set `PGPASSWORD` in your session before running, or configure `pgpass.conf`:
 
-**Linux** — scripts run via `sudo -u postgres` using peer authentication.
-No extra config needed on most systems. If using a remote host, set:
-```bash
-export PGPASSWORD="yourpassword"
-```
-Or create `/root/.pgpass`:
-```
-localhost:5432:*:postgres:yourpassword
-```
-```bash
-chmod 600 /root/.pgpass
-```
-
-**Windows** — set the environment variable before running, OR create the pgpass file:
 ```powershell
+# Option 1: Session variable
 $env:PGPASSWORD = "yourpassword"
-.\windows\07_Backup-Postgres.ps1 -Action backup
+.\07_Backup-Postgres.ps1 -Action backup
 ```
+
 Or create `%APPDATA%\postgresql\pgpass.conf`:
 ```
 localhost:5432:*:postgres:yourpassword
 ```
 ```powershell
-icacls "$env:APPDATA\postgresql\pgpass.conf" /inheritance:r /grant "$env:USERNAME:F"
+New-Item -ItemType Directory -Path "$env:APPDATA\postgresql" -Force | Out-Null
+icacls "$env:APPDATA\postgresql\pgpass.conf" /inheritance:r /grant "${env:USERNAME}:F"
 ```
 
 ---
 
-### DATABASE BACKUP — WHAT GETS SAVED
+## Security Notes
 
-| Item | MySQL | PostgreSQL |
+- All backup directories are ACL-restricted to Administrators and SYSTEM only at creation time.
+- SHA-256 manifests (`sha256_manifest.json`) are written at backup time for tamper detection.
+- Pre-restore archives are created before overwriting live files (`.zip` suffix with timestamp).
+- SMB1 must be disabled — `03_Backup-SMB.ps1 -Action audit` will flag it if enabled.
+- OpenSSH host keys are backed up with restricted ACLs — treat the backup directory as sensitive.
+
+---
+
+## Recommended Competition Workflow
+
+1. **At competition start** → `.\00_Master.ps1 -Action backup`
+2. **After any remediation** → Re-run backup to capture clean state
+3. **On suspected compromise** → Run `-Action audit` or `-Action scan` on the affected service, then `restore`
+4. **After every restore** → Run `-Action verify` to confirm hash integrity
+
+---
+
+## Notes on Specific Restore Risks
+
+- **SSH restore:** Stops and restarts the `sshd` service. Test a new connection before closing the current session.
+- **IIS restore:** Prefers `appcmd restore backup` (native IIS method); falls back to file copy if appcmd fails.
+- **SMB restore:** Share paths must exist on disk — the script cannot recreate directories, only shares.
+- **MySQL full restore:** Stop all applications that use the database first. Full restore is destructive.
+- **PostgreSQL custom dumps:** Use `pg_restore -t tablename -d dbname backup.dump` for selective table restore.
+
+---
+
+## PowerShell Compatibility
+
+All scripts are tested and compatible with **both PowerShell 5.1 and PowerShell 7.x** on Windows.
+
+| Feature | PS 5.1 | PS 7.x |
 |---|---|---|
-| Full instance dump | ✅ `--all-databases` | ✅ `pg_dumpall` |
-| Per-database dumps | ✅ One `.sql.gz` per DB | ✅ One `.dump` per DB (custom format) |
-| User accounts + grants | ✅ Separate grants file | ✅ Included in globals dump |
-| Server config | ✅ `my.cnf` / `my.ini` | ✅ `postgresql.conf`, `pg_hba.conf`, `pg_ident.conf` |
-| Binary log position | ✅ Captured in full dump | N/A |
-| Roles / tablespaces | N/A | ✅ `pg_dumpall --globals-only` |
-| SHA-256 manifest | ✅ | ✅ |
+| All backup/restore actions | ✅ | ✅ |
+| GZip compression (.NET) | ✅ | ✅ |
+| SMB / IIS / SSH modules | ✅ | ✅ (Windows only) |
+| WMI (`Get-WmiObject`) | ✅ | ❌ removed — scripts use `Get-CimInstance` |
+| Null coalescing `??` | ❌ | ✅ — scripts use compatible `if/else` instead |
 
----
+**Minimum:** PowerShell 5.1 (default on Windows Server 2016+)
+**Recommended:** PowerShell 7.x for improved error messages and performance
 
-### DATABASE RESTORE — OPTIONS
+Install PS7: `winget install Microsoft.PowerShell` or download from [github.com/PowerShell/PowerShell](https://github.com/PowerShell/PowerShell/releases)
 
-Both database scripts offer an **interactive restore menu**:
-
+The `WebAdministration` module (IIS scripts) requires the IIS Management Tools feature:
+```powershell
+Install-WindowsFeature -Name Web-Mgmt-Tools
 ```
-1) Full instance restore    — Restores EVERYTHING (destructive — stop apps first)
-2) Single database restore  — Pick one DB from the per-database backup list
-3) Users/grants only        — Restore accounts without touching data
-```
-
-PostgreSQL additionally offers:
-```
-4) Config files only        — Restore pg_hba.conf/postgresql.conf without touching data
-```
-
----
-
-### DATABASE AUDIT — WHAT GETS CHECKED
-
-**MySQL audit** flags:
-- Anonymous user accounts (`user=''`)
-- Accounts with empty passwords
-- `root@%` — root accessible from any host
-- Non-root users with `FILE` privilege (OS file read/write via SQL)
-- `secure_file_priv` not configured
-- `bind-address = 0.0.0.0` (exposed to all interfaces)
-
-**PostgreSQL audit** flags:
-- Unexpected superuser accounts (non-`postgres`)
-- Login roles with no password set
-- `trust` auth entries in `pg_hba.conf` (passwordless access — critical)
-- `md5` auth (deprecated — recommend upgrading to `scram-sha-256`)
-- `listen_addresses = '*'` (all interfaces exposed)
-- SSL disabled
-- Tables with `PUBLIC` write grants (`INSERT`/`UPDATE`/`DELETE`)
-
----
-
-### RECOMMENDED COMPETITION WORKFLOW
-1. **As soon as competition begins** → `backup` all services
-2. **After any remediation** → `backup` again to capture clean state
-3. **After suspected compromise** → Run `audit`/`scan`, then `restore` from known-good
-4. **Verify after every restore** → Use `verify` action to confirm hash integrity
-
----
-
-### IMPORTANT NOTES
-- Linux: `02_backup_pam.sh reinstall` is the nuclear option — use if PAM is backdoored
-- Windows: After restoring SSH, always verify in a **new session** before closing current
-- SMB1 should be disabled — `03_Backup-SMB.ps1 -Action audit` will flag if enabled
-- MySQL: **Never run Full Restore** unless all dependent applications are stopped first
-- PostgreSQL: Custom format (`.dump`) backups support selective table restore:
-  `pg_restore -t tablename -d dbname backup.dump`
-- Backups are stored with restricted permissions (root/Administrators only)
-- Pre-restore snapshots are always saved before overwriting live files
-- Database credential files **must** be `chmod 600` (Linux) or ACL-restricted (Windows)
+The `SmbShare` and `NetFirewall` modules are included in Windows Server by default.

@@ -120,10 +120,11 @@ do_backup() {
     done
 
     # Record version
+    # Capture web server version to file; both stdout and stderr needed (nginx/lighttpd write to stderr)
     case "$ws" in
-        apache) apache2 -v 2>/dev/null || httpd -v > "${BACKUP_DIR}/version.txt" 2>/dev/null || true ;;
-        nginx)  nginx -v > "${BACKUP_DIR}/version.txt" 2>/dev/null || true ;;
-        lighttpd) lighttpd -v > "${BACKUP_DIR}/version.txt" 2>/dev/null || true ;;
+        apache)   (apache2 -v 2>&1 || httpd -v 2>&1) > "${BACKUP_DIR}/version.txt" || true ;;
+        nginx)    nginx -v 2>&1 > "${BACKUP_DIR}/version.txt" || true ;;
+        lighttpd) lighttpd -v 2>&1 > "${BACKUP_DIR}/version.txt" || true ;;
     esac
 
     # Hash manifest
@@ -258,12 +259,17 @@ do_restore() {
         fi
     done
 
-    # Test config before reload
+    # Test config before reload — do not restart if config is broken
     info "Testing restored configuration..."
     if eval "$TEST_CMD" 2>&1 | tee -a "$LOG_FILE"; then
         info "  Config test passed."
-        eval "$RELOAD_CMD" && info "  Service reloaded: $SERVICE_NAME" || \
-            systemctl restart "$SERVICE_NAME" && info "  Service restarted: $SERVICE_NAME"
+        if eval "$RELOAD_CMD" 2>>"$LOG_FILE"; then
+            info "  Service reloaded: $SERVICE_NAME"
+        else
+            warn "  Reload failed — attempting full restart..."
+            systemctl restart "$SERVICE_NAME" && info "  Service restarted: $SERVICE_NAME" || \
+                error "  Could not restart $SERVICE_NAME — check service status manually."
+        fi
     else
         error "Config test FAILED. Service NOT reloaded. Fix errors and manually restart."
         exit 1

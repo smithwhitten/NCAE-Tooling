@@ -42,16 +42,16 @@ $PGBinPaths = @(
     "C:\Program Files\PostgreSQL\12\bin"
 )
 
-# Connection settings
-$PGHost    = $env:PGHOST   ?? "localhost"
-$PGPort    = $env:PGPORT   ?? "5432"
-$PGUser    = $env:PGUSER   ?? "postgres"
+# Connection settings — PS 5.1-compatible conditional assignment (not the PS7+ ?? operator)
+$PGHost    = if ($env:PGHOST)     { $env:PGHOST }     else { "localhost" }
+$PGPort    = if ($env:PGPORT)     { $env:PGPORT }     else { "5432" }
+$PGUser    = if ($env:PGUSER)     { $env:PGUSER }     else { "postgres" }
 
 # Password via PGPASSWORD environment variable OR pgpass.conf
 # Recommended: Set PGPASSWORD before running, or create pgpass.conf at:
 # %APPDATA%\postgresql\pgpass.conf  with line: localhost:5432:*:postgres:yourpassword
 # Then: icacls pgpass.conf /inheritance:r /grant %USERNAME%:F
-$PGPassword = $env:PGPASSWORD ?? ""
+$PGPassword = if ($env:PGPASSWORD) { $env:PGPASSWORD } else { "" }
 
 # Dump format: 'custom' (.dump) or 'plain' (.sql)
 $DumpFormat = "custom"

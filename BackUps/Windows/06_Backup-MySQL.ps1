@@ -43,8 +43,9 @@ $MySQLBinPaths = @(
 )
 
 # Connection settings — override with environment variables if preferred
-$MySQLHost = $env:MYSQL_HOST ?? "localhost"
-$MySQLPort = $env:MYSQL_PORT ?? "3306"
+# Use PS 5.1-compatible conditional assignment (not the PS7+ ?? operator)
+$MySQLHost = if ($env:MYSQL_HOST) { $env:MYSQL_HOST } else { "localhost" }
+$MySQLPort = if ($env:MYSQL_PORT) { $env:MYSQL_PORT } else { "3306" }
 
 # Credentials options file path — RECOMMENDED over plaintext password
 # Format: [client]\nuser=root\npassword=yourpassword

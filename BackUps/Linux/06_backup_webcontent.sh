@@ -52,14 +52,15 @@ find_active_webroots() {
     for root in "${WEB_ROOTS[@]}"; do
         [[ -d "$root" ]] && found+=("$root")
     done
-    echo "${found[@]:-}"
+    # Only print if array has entries — empty array would produce a blank line
+    [[ ${#found[@]} -gt 0 ]] && printf '%s\n' "${found[@]}" || true
 }
 
 # ── Backup ────────────────────────────────────────────────────────────────────
 do_backup() {
     info "=== Web Content Backup: $TIMESTAMP ==="
 
-    mapfile -t active_roots < <(find_active_webroots | tr ' ' '\n')
+    mapfile -t active_roots < <(find_active_webroots)
 
     if [[ ${#active_roots[@]} -eq 0 ]]; then
         warn "No web roots found. Check WEB_ROOTS array in script configuration."
@@ -104,7 +105,7 @@ do_backup() {
 # ── Webshell / Defacement Scanner ─────────────────────────────────────────────
 do_scan() {
     info "=== Web Content Security Scan ==="
-    mapfile -t active_roots < <(find_active_webroots | tr ' ' '\n')
+    mapfile -t active_roots < <(find_active_webroots)
 
     local issues=0
 
@@ -146,7 +147,7 @@ do_scan() {
         for upload_dir in uploads upload files images img; do
             if [[ -d "${webroot}/${upload_dir}" ]]; then
                 local php_in_uploads
-                php_in_uploads=$(find "${webroot}/${upload_dir}" -name "*.php" -o -name "*.phtml" 2>/dev/null || true)
+                php_in_uploads=$(find "${webroot}/${upload_dir}" \( -name "*.php" -o -name "*.phtml" \) 2>/dev/null || true)
                 if [[ -n "$php_in_uploads" ]]; then
                     alert "  PHP file(s) in upload directory ${upload_dir}/ — possible webshell:"
                     echo "$php_in_uploads" | tee -a "$LOG_FILE"
@@ -189,12 +190,14 @@ do_scan() {
 
         # ── Integrity check against backup ────────────────────────────────────
         if [[ -L "$LATEST_LINK" && -f "${LATEST_LINK}/sha256sums.txt" ]]; then
+            local real_backup
+            real_backup=$(readlink -f "$LATEST_LINK")
             info "  Comparing against backup hashes..."
             local mismatches=0
             while IFS= read -r line; do
                 expected_hash=$(echo "$line" | awk '{print $1}')
                 backup_path=$(echo "$line" | awk '{print $2}')
-                live_path="${backup_path#${LATEST_LINK}}"
+                live_path="${backup_path#${real_backup}}"
                 # Only check files within this webroot
                 [[ "$live_path" != "$webroot"* ]] && continue
                 if [[ -f "$live_path" ]]; then
@@ -207,7 +210,7 @@ do_scan() {
                     warn "  DELETED: $live_path"
                     ((mismatches++))
                 fi
-            done < "${LATEST_LINK}/sha256sums.txt"
+            done < "${real_backup}/sha256sums.txt"
             [[ $mismatches -eq 0 ]] && info "  Integrity check: All files match backup." || \
                 alert "  $mismatches file(s) changed or deleted since last backup."
         fi
@@ -229,7 +232,7 @@ do_restore() {
         exit 1
     fi
 
-    mapfile -t active_roots < <(find_active_webroots | tr ' ' '\n')
+    mapfile -t active_roots < <(find_active_webroots)
 
     warn "This will overwrite web content with backup from: $(readlink "$LATEST_LINK")"
     warn "Active web roots: ${active_roots[*]}"

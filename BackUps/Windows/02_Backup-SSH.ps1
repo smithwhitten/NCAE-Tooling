@@ -55,7 +55,9 @@ function Write-Alert { Write-Log "ALERT" $args[0] }
 
 # Check if OpenSSH is installed
 function Test-OpenSSH {
-    $feature = Get-WindowsCapability -Online -Name "OpenSSH.Server*" -ErrorAction SilentlyContinue
+    # Get-WindowsCapability only exists on Windows Desktop/Server; wrap in try for safety
+    $feature = $null
+    try { $feature = Get-WindowsCapability -Online -Name "OpenSSH.Server*" -ErrorAction SilentlyContinue } catch {}
     $service = Get-Service -Name "sshd" -ErrorAction SilentlyContinue
     if (-not $feature -and -not $service) {
         Write-Warn "OpenSSH Server may not be installed."
@@ -194,7 +196,8 @@ function Invoke-Audit {
     }
 
     # Check sshd service account
-    $sshdSvc = Get-WmiObject Win32_Service -Filter "Name='sshd'" -ErrorAction SilentlyContinue
+    # Get-CimInstance replaces deprecated Get-WmiObject (removed in PS7+)
+    $sshdSvc = Get-CimInstance -ClassName Win32_Service -Filter "Name='sshd'" -ErrorAction SilentlyContinue
     if ($sshdSvc -and $sshdSvc.StartName -ne "LocalSystem" -and $sshdSvc.StartName -notmatch "NT AUTHORITY") {
         Write-Warn "  [REVIEW] sshd running as: $($sshdSvc.StartName) — verify this is expected"
     }

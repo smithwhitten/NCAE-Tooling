@@ -89,7 +89,9 @@ function Invoke-Backup {
     }
 
     # 4. Export SMB1 protocol status (security-relevant)
-    $smb1 = Get-WindowsOptionalFeature -Online -FeatureName "SMB1Protocol" -ErrorAction SilentlyContinue
+    # Get-WindowsOptionalFeature requires DISM — wrap in try/catch for compatibility
+    $smb1 = $null
+    try { $smb1 = Get-WindowsOptionalFeature -Online -FeatureName "SMB1Protocol" -ErrorAction SilentlyContinue } catch {}
     if ($smb1) {
         [PSCustomObject]@{ SMB1_State = $smb1.State.ToString() } |
             ConvertTo-Json | Set-Content (Join-Path $BackupDir "smb1_status.json") -Encoding UTF8
@@ -97,6 +99,12 @@ function Invoke-Backup {
             Write-Alert "SMB1 Protocol is ENABLED — this is a critical security risk (EternalBlue)"
         } else {
             Write-Info "  SMB1 Protocol: Disabled (good)"
+        }
+    } else {
+        # Fallback: check via SMB server configuration when DISM cmdlet unavailable
+        $smbFallback = Get-SmbServerConfiguration -ErrorAction SilentlyContinue
+        if ($smbFallback -and $smbFallback.EnableSMB1Protocol) {
+            Write-Alert "SMB1 is ENABLED (detected via SmbServerConfiguration)"
         }
     }
 
@@ -140,25 +148,26 @@ function Invoke-Audit {
     Write-Info "=== SMB Security Audit ==="
     $issues = 0
 
-    # SMB1 check
-    $smb1 = Get-WindowsOptionalFeature -Online -FeatureName "SMB1Protocol" -ErrorAction SilentlyContinue
-    if ($smb1 -and $smb1.State -eq "Enabled") {
-        Write-Alert "CRITICAL: SMB1 is ENABLED — vulnerable to EternalBlue (MS17-010)"
-        Write-Alert "  Disable: Disable-WindowsOptionalFeature -Online -FeatureName SMB1Protocol"
-        $issues++
-    }
-
-    # SMB signing check
+    # SMB1 check — prefer SmbServerConfiguration (always available); fall back to DISM
     $smbConfig = Get-SmbServerConfiguration -ErrorAction SilentlyContinue
     if ($smbConfig) {
+        if ($smbConfig.EnableSMB1Protocol) {
+            Write-Alert "CRITICAL: SMB1 is ENABLED — vulnerable to EternalBlue (MS17-010)"
+            Write-Alert "  Disable: Set-SmbServerConfiguration -EnableSMB1Protocol `$false -Force"
+            $issues++
+        }
         if (-not $smbConfig.RequireSecuritySignature) {
             Write-Warn "  SMB signing not required — susceptible to relay attacks"
             $issues++
         } else {
             Write-Info "  SMB signing required: OK"
         }
-        if ($smbConfig.EnableSMB1Protocol) {
-            Write-Alert "  SMB1 enabled in server config"
+    } else {
+        # Fallback to DISM cmdlet when SmbServerConfiguration unavailable
+        $smb1 = $null
+        try { $smb1 = Get-WindowsOptionalFeature -Online -FeatureName "SMB1Protocol" -ErrorAction SilentlyContinue } catch {}
+        if ($smb1 -and $smb1.State -eq "Enabled") {
+            Write-Alert "CRITICAL: SMB1 is ENABLED — vulnerable to EternalBlue (MS17-010)"
             $issues++
         }
     }
@@ -186,8 +195,9 @@ function Invoke-Audit {
         }
     }
 
-    # Check guest account
-    $guest = Get-LocalUser -Name "Guest" -ErrorAction SilentlyContinue
+    # Check guest account — Get-LocalUser available on Windows PS5.1 and PS7
+    $guest = $null
+    try { $guest = Get-LocalUser -Name "Guest" -ErrorAction SilentlyContinue } catch {}
     if ($guest -and $guest.Enabled) {
         Write-Alert "Guest account is ENABLED — should be disabled"
         $issues++
