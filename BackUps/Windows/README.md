@@ -9,8 +9,6 @@
 # One-time setup — allow local scripts to run
 Set-ExecutionPolicy RemoteSigned -Scope LocalMachine
 
-# Full backup of all services
-.\00_Master.ps1 -Action backup
 
 # Interactive restore menu
 .\00_Master.ps1 -Action restore
