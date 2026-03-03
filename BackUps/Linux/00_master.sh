@@ -19,6 +19,9 @@
 #   06_backup_webcontent.sh  — Web root content
 #   07_backup_mysql.sh       — MySQL / MariaDB databases
 #   08_backup_postgres.sh    — PostgreSQL databases
+#   09_backup_dns.sh         — DNS / BIND9 zones and config
+#   10_backup_firewall.sh    — iptables / nftables rules + network config
+#   11_backup_users.sh       — User accounts, sudoers, cron jobs
 # =============================================================================
 
 set -euo pipefail
@@ -64,6 +67,9 @@ run_all_backups() {
         "06_backup_webcontent.sh"
         "07_backup_mysql.sh"
         "08_backup_postgres.sh"
+        "09_backup_dns.sh"
+        "10_backup_firewall.sh"
+        "11_backup_users.sh"
     )
 
     local failed=()
@@ -110,32 +116,40 @@ restore_menu() {
     echo "  2) PAM"
     echo "  3) SSHD Config"
     echo "  4) Samba (SMB)"
+    echo "  5) User Accounts / Sudoers / Cron"
+    echo "  6) Firewall Rules"
     echo ""
     echo "  ── Web ─────────────────────────────"
-    echo "  5) Web Server Config"
-    echo "  6) Web Content"
+    echo "  7) Web Server Config"
+    echo "  8) Web Content"
     echo ""
     echo "  ── Databases ───────────────────────"
-    echo "  7) MySQL / MariaDB"
-    echo "  8) PostgreSQL"
+    echo "  9) MySQL / MariaDB"
+    echo " 10) PostgreSQL"
+    echo ""
+    echo "  ── Network Services ────────────────"
+    echo " 11) DNS / BIND9"
     echo ""
     echo "  ── All ─────────────────────────────"
-    echo "  9) ALL services (full restore)"
+    echo " 12) ALL services (full restore)"
     echo ""
     echo "  0) Exit"
     echo ""
     read -rp "Choice: " choice
 
     case "$choice" in
-        1) bash "$SCRIPT_DIR/01_backup_binaries.sh" restore ;;
-        2) bash "$SCRIPT_DIR/02_backup_pam.sh" restore ;;
-        3) bash "$SCRIPT_DIR/03_backup_sshd.sh" restore ;;
-        4) bash "$SCRIPT_DIR/04_backup_smb.sh" restore ;;
-        5) bash "$SCRIPT_DIR/05_backup_webserver.sh" restore ;;
-        6) bash "$SCRIPT_DIR/06_backup_webcontent.sh" restore ;;
-        7) bash "$SCRIPT_DIR/07_backup_mysql.sh" restore ;;
-        8) bash "$SCRIPT_DIR/08_backup_postgres.sh" restore ;;
-        9)
+        1)  bash "$SCRIPT_DIR/01_backup_binaries.sh" restore ;;
+        2)  bash "$SCRIPT_DIR/02_backup_pam.sh" restore ;;
+        3)  bash "$SCRIPT_DIR/03_backup_sshd.sh" restore ;;
+        4)  bash "$SCRIPT_DIR/04_backup_smb.sh" restore ;;
+        5)  bash "$SCRIPT_DIR/11_backup_users.sh" restore ;;
+        6)  bash "$SCRIPT_DIR/10_backup_firewall.sh" restore ;;
+        7)  bash "$SCRIPT_DIR/05_backup_webserver.sh" restore ;;
+        8)  bash "$SCRIPT_DIR/06_backup_webcontent.sh" restore ;;
+        9)  bash "$SCRIPT_DIR/07_backup_mysql.sh" restore ;;
+        10) bash "$SCRIPT_DIR/08_backup_postgres.sh" restore ;;
+        11) bash "$SCRIPT_DIR/09_backup_dns.sh" restore ;;
+        12)
             warn "Full restore will interactively prompt for each service."
             read -rp "Type 'CONFIRM' to proceed: " confirm
             [[ "$confirm" != "CONFIRM" ]] && { info "Cancelled."; exit 0; }
@@ -147,7 +161,10 @@ restore_menu() {
                 "05_backup_webserver.sh" \
                 "06_backup_webcontent.sh" \
                 "07_backup_mysql.sh" \
-                "08_backup_postgres.sh"; do
+                "08_backup_postgres.sh" \
+                "09_backup_dns.sh" \
+                "10_backup_firewall.sh" \
+                "11_backup_users.sh"; do
                 [[ -f "$SCRIPT_DIR/$script" ]] && bash "$SCRIPT_DIR/$script" restore || true
             done
             ;;
