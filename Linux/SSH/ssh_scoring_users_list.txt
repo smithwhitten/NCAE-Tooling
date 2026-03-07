@@ -1,0 +1,16 @@
+# ssh_scoring_users_list.txt
+# Users that the scoring engine will SSH into.
+# One username per line. Lines starting with # are ignored.
+# These are the users whose authorized_keys will get the scoring public key.
+#
+# On competition day: check the competition dashboard for the exact
+# usernames the scoring engine uses. Add them here before running scripts.
+#
+# root is always added automatically by the scripts — you don't need to list it here.
+
+# ── Add scoring usernames below ───────────────────────────────────────────────
+root
+# Example — add real usernames:
+# ncae
+# scoring
+# blueteam
