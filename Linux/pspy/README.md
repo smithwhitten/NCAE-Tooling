@@ -2,6 +2,8 @@
 
 # pspy - unprivileged Linux process snooping
 
+Repo - https://github.com/DominicBreuker/pspy?tab=GPL-3.0-1-ov-file#readme
+
 [![Go Report Card](https://goreportcard.com/badge/github.com/DominicBreuker/pspy)](https://goreportcard.com/report/github.com/DominicBreuker/pspy)
 [![Maintainability](https://api.codeclimate.com/v1/badges/23328b2549a76aa11dd5/maintainability)](https://codeclimate.com/github/DominicBreuker/pspy/maintainability)
 [![Test Coverage](https://api.codeclimate.com/v1/badges/23328b2549a76aa11dd5/test_coverage)](https://codeclimate.com/github/DominicBreuker/pspy/test_coverage)
