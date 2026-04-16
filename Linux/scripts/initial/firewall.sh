@@ -102,10 +102,6 @@ iptables -P INPUT DROP
 iptables -P FORWARD DROP
 iptables -P OUTPUT DROP
 
-# 3. Allow only Loopback (Essential for DB services)
-iptables -A INPUT -i lo -j ACCEPT
-iptables -A OUTPUT -o lo -j ACCEPT
-
 # 4. Persistence
 if [ -d /etc/iptables ]; then
     iptables-save > /etc/iptables/rules.v4
