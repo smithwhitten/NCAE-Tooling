@@ -1,21 +1,14 @@
 #!/bin/bash
-# TNTECH NCAE 2026 - Database Box "Smart Lockdown" V3
-# Fixed: Syntax error with nftables curly braces using single quotes.
+# TNTECH NCAE 2026 - Universal "Zero-Trust" Repair & Lockdown
+# Strategy: Verify Integrity -> Repair/Install -> Global DROP (In/Out/Forward)
 
 if [ "$EUID" -ne 0 ]; then
-    echo "Fatal: Run as root!"
+    echo "Fatal: Must run as root!"
     exit 1
 fi
 
-# === CONFIG ===
-T=10
-WEB="192.168.$T.5"
-DB_PORT=5432
-DNS="192.168.$T.12"
-BACKUP="192.168.$T.15"
-
 # ============================================================
-# UTILITIES
+# UTILITIES: INTEGRITY & REPAIR
 # ============================================================
 
 check_integrity() {
@@ -25,6 +18,7 @@ check_integrity() {
     if [ -z "$path" ]; then return 1; fi
     if [ ! -x "$path" ]; then return 1; fi
     
+    # Check for empty/dummy files (Red Team trick)
     local size
     size=$(wc -c < "$path" 2>/dev/null)
     if [ "${size:-0}" -lt 100 ]; then return 1; fi
@@ -32,9 +26,9 @@ check_integrity() {
 }
 
 detect_pkg() {
-    if command -v apt-get &>/dev/null; then echo "apt"
-    elif command -v dnf &>/dev/null; then echo "dnf"
-    elif command -v yum &>/dev/null; then echo "yum"
+    if   command -v apt-get &>/dev/null; then echo "apt"
+    elif command -v dnf     &>/dev/null; then echo "dnf"
+    elif command -v yum     &>/dev/null; then echo "yum"
     else echo "none"; fi
 }
 
@@ -42,83 +36,83 @@ PKG_MGR=$(detect_pkg)
 
 install_fix() {
     local pkg="$1"
-    echo "  [!] Attempting repair: $pkg"
+    echo "[!] Attempting repair/installation of $pkg..."
     case $PKG_MGR in
-        apt) apt-get update &>/dev/null; apt-get install -y --reinstall "$pkg" &>/dev/null ;;
-        dnf|yum) $PKG_MGR install -y "$pkg" &>/dev/null ;;
+        apt) 
+            apt-get update &>/dev/null
+            apt-get install -y --reinstall "$pkg" &>/dev/null 
+            ;;
+        dnf|yum) 
+            $PKG_MGR install -y "$pkg" &>/dev/null 
+            ;;
+        *) 
+            echo "  [!] No package manager found. Manual repair needed."
+            return 1 
+            ;;
     esac
 }
 
 # ============================================================
-# FIREWALL LOGIC
+# LOCKDOWN EXECUTION
 # ============================================================
 
-try_nftables() {
-    echo "[*] Trying nftables..."
-    check_integrity nft || install_fix nftables || return 1
+echo "------------------------------------------------------"
+echo " PHASE 1: INTEGRITY CHECK"
+echo "------------------------------------------------------"
 
-    nft flush ruleset
-    nft add table inet filter
-    
-    # SINGLE QUOTES protect the curly braces from Bash
-    nft 'add chain inet filter input { type filter hook input priority 0; policy drop; }'
-    nft 'add chain inet filter output { type filter hook output priority 0; policy drop; }'
-    
-    nft add rule inet filter input iif lo accept
-    nft "add rule inet filter input ip saddr $WEB tcp dport $DB_PORT accept"
-    nft 'add rule inet filter input ct state established,related accept'
-    
-    nft add rule inet filter output oif lo accept
-    nft "add rule inet filter output ip daddr $DNS udp dport 53 accept"
-    nft "add rule inet filter output ip daddr $BACKUP accept"
-    nft 'add rule inet filter output ct state established,related accept'
-    
-    nft list ruleset > /etc/nftables.conf
-    systemctl enable --now nftables &>/dev/null
-    return 0
-}
+# Ensure iptables is present and functional
+if ! check_integrity iptables; then
+    install_fix iptables
+    if ! check_integrity iptables; then
+        echo "FATAL: Could not fix iptables. Integrity compromised."
+        exit 1
+    fi
+fi
+echo "[+] iptables verified/repaired."
 
-try_iptables() {
-    echo "[*] Trying iptables..."
-    check_integrity iptables || install_fix iptables || return 1
-    
-    iptables -F
-    iptables -P INPUT DROP
-    iptables -P OUTPUT DROP
-    iptables -P FORWARD DROP
-    
-    iptables -A INPUT -i lo -j ACCEPT
-    iptables -A INPUT -p tcp -s "$WEB" --dport "$DB_PORT" -m conntrack --ctstate NEW,ESTABLISHED -j ACCEPT
-    iptables -A INPUT -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
-    
-    iptables -A OUTPUT -o lo -j ACCEPT
-    iptables -A OUTPUT -p udp -d "$DNS" --dport 53 -j ACCEPT
-    iptables -A OUTPUT -d "$BACKUP" -j ACCEPT
-    iptables -A OUTPUT -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+echo "------------------------------------------------------"
+echo " PHASE 2: SERVICES LOCKDOWN"
+echo "------------------------------------------------------"
 
-    mkdir -p /etc/iptables
-    iptables-save > /etc/iptables/rules.v4
-    return 0
-}
-
-# ============================================================
-# EXECUTION
-# ============================================================
-
-echo "[*] Locking down management services..."
-for svc in ufw firewalld; do
+# Stop/Mask managers so they don't fight our global DROP
+for svc in ufw firewalld nftables; do
     systemctl stop "$svc" &>/dev/null
     systemctl disable "$svc" &>/dev/null
     systemctl mask "$svc" &>/dev/null
 done
+echo "[+] Management services masked."
 
-if try_nftables; then
-    echo "SUCCESS: nftables applied."
-    exit 0
-elif try_iptables; then
-    echo "SUCCESS: iptables applied."
-    exit 0
-else
-    echo "FATAL: Could not apply any firewall."
-    exit 1
+echo "------------------------------------------------------"
+echo " PHASE 3: GLOBAL DROP (SCORCHED EARTH)"
+echo "------------------------------------------------------"
+
+# 1. Flush all current rules
+iptables -P INPUT ACCEPT
+iptables -P FORWARD ACCEPT
+iptables -P OUTPUT ACCEPT
+iptables -F
+iptables -X
+iptables -t nat -F
+iptables -t nat -X
+iptables -t mangle -F
+iptables -t mangle -X
+
+# 2. SET UNIVERSAL DROP (The Big Hammer)
+iptables -P INPUT DROP
+iptables -P FORWARD DROP
+iptables -P OUTPUT DROP
+
+# 3. Allow only Loopback (Essential for DB services)
+iptables -A INPUT -i lo -j ACCEPT
+iptables -A OUTPUT -o lo -j ACCEPT
+
+# 4. Persistence
+if [ -d /etc/iptables ]; then
+    iptables-save > /etc/iptables/rules.v4
 fi
+
+echo "------------------------------------------------------"
+echo " UNIVERSAL LOCKDOWN COMPLETE"
+echo "------------------------------------------------------"
+echo " Status: 100% Isolation (except Localhost)"
+echo " No Inbound, No Outbound, No Forwarding."
