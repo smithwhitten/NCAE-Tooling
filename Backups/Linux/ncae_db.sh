@@ -3,24 +3,20 @@
 
 #!/usr/bin/env bash
 # =============================================================================
-# NCAE Cyber Games 2026 — Regional  |  Team 22
-# Universal Backup & Restore Manager — FULLY SELF-CONTAINED
+# NCAE Cyber Games 2026 — Regional  |  Team 10
+# Database Backup & Restore Manager — FULLY SELF-CONTAINED
 # =============================================================================
-# Drop this single script on ANY box and run it. No external scripts required.
-# All backup/restore logic is inlined.
+# Drop this single script on the Database box and run it.
+# No external scripts required. All backup/restore logic is inlined.
 #
 # Usage:  sudo bash ncae_backup_manager.sh
 #
 # Covers (all inline, zero dependencies):
 #   Database box   — PostgreSQL + /etc + PAM
-#   Web box        — Apache/Nginx/Lighttpd config + SSL + web content
-#   DNS box        — BIND9 zones + config + /etc + PAM
-#   Shell/SMB box  — Samba + SSHD + /etc + PAM
-#   Any box        — System configs, PAM, critical binaries, users
 #
 # Backup destinations:
 #   Local  — /opt/blueteam/backups/<service>/  and  /root/.cache/backups/
-#   Remote — rsync/scp to backup server (192.168.t.15)
+#   Remote — rsync/scp to backup server (192.168.10.15)
 # =============================================================================
 
 set -uo pipefail
@@ -41,7 +37,7 @@ TIMESTAMP="$(date +%Y%m%d_%H%M%S)"
 PG_SUPERUSER="postgres"
 PG_BACKUP_ROOT="${BACKUP_ROOT}/postgres"
 
-# Backup server (set after team number is entered)
+# Backup server (set at startup)
 BACKUP_SERVER_USER="root"
 BACKUP_SERVER_BASE_PATH="/backups"
 BACKUP_SERVER=""
@@ -54,7 +50,7 @@ SELECTED_BOX_IP=""
 # Global return slot — avoids stdout pollution when functions write logs
 BACKUP_RESULT=""
 
-# Derived IPs — set by select_team_number
+# Derived IPs — set by setup_team
 TEAM_NUM=""
 INTERNAL_SUBNET=""
 IP_DB="" IP_WEB="" IP_DNS="" IP_SHELL="" IP_BACKUP=""
@@ -94,13 +90,8 @@ touch "$LOG_FILE" && chmod 600 "$LOG_FILE"
 # NETWORK / TEAM SETUP
 # =============================================================================
 
-select_team_number() {
-    echo ""
-    read -rp "  Enter your team number (e.g. 22): " TEAM_NUM
-    if ! [[ "$TEAM_NUM" =~ ^[0-9]+$ ]]; then
-        warn "Invalid team number — defaulting to 22."
-        TEAM_NUM=22
-    fi
+setup_team() {
+    TEAM_NUM=10
     INTERNAL_SUBNET="192.168.${TEAM_NUM}"
     IP_DB="${INTERNAL_SUBNET}.7"
     IP_WEB="${INTERNAL_SUBNET}.5"
@@ -1248,6 +1239,9 @@ menu_list_backups() {
     else
         warn "  Backup server unreachable or not set."
     fi
+
+    echo ""
+    read -rp "  Press Enter to go back..." _
 }
 
 # =============================================================================
@@ -1471,15 +1465,11 @@ select_box() {
     while true; do
         echo ""
         echo -e "${BOLD}${CYAN}╔══════════════════════════════════════════════════════════╗${NC}"
-        echo -e "${BOLD}${CYAN}║   NCAE Cyber Games 2026 — Universal Backup Manager       ║${NC}"
-        printf "${BOLD}${CYAN}║   Backup server: %-40s║${NC}\n" "${BACKUP_SERVER:-not set}"
+        echo -e "${BOLD}${CYAN}║   NCAE Cyber Games 2026 — Database Backup Manager        ║${NC}"
+        printf "${BOLD}${CYAN}║   Team 10  |  Backup server: %-29s║${NC}\n" "${BACKUP_SERVER:-not set}"
         echo -e "${BOLD}${CYAN}╚══════════════════════════════════════════════════════════╝${NC}"
         echo ""
-        echo -e "  Which box are you on?\n"
         echo -e "  ${GREEN}1)${NC} Database Box      (${IP_DB})   — PostgreSQL"
-        echo -e "  ${GREEN}2)${NC} Web Box            (${IP_WEB})   — Apache/Nginx + content"
-        echo -e "  ${GREEN}3)${NC} DNS Box            (${IP_DNS})  — BIND9"
-        echo -e "  ${GREEN}4)${NC} Shell / SMB Box    (${IP_SHELL}) — Samba + SSH"
         echo -e "  ${RED}0)${NC} Exit"
         echo ""
         read -rp "Choice: " choice
@@ -1490,26 +1480,10 @@ select_box() {
                 BACKUP_SERVER="${IP_BACKUP}"
                 BACKUP_SERVER_PATH="${BACKUP_SERVER_BASE_PATH}/db"
                 menu_db_box ;;
-            2)
-                SELECTED_BOX="Web Box"; SELECTED_BOX_IP="${IP_WEB}"
-                BACKUP_SERVER="${IP_BACKUP}"
-                BACKUP_SERVER_PATH="${BACKUP_SERVER_BASE_PATH}/web"
-                menu_web_box ;;
-            3)
-                SELECTED_BOX="DNS Box"; SELECTED_BOX_IP="${IP_DNS}"
-                BACKUP_SERVER="${IP_BACKUP}"
-                BACKUP_SERVER_PATH="${BACKUP_SERVER_BASE_PATH}/dns"
-                menu_dns_box ;;
-            4)
-                SELECTED_BOX="Shell/SMB Box"; SELECTED_BOX_IP="${IP_SHELL}"
-                BACKUP_SERVER="${IP_BACKUP}"
-                BACKUP_SERVER_PATH="${BACKUP_SERVER_BASE_PATH}/shell"
-                menu_shell_box ;;
-
             0)
                 info "Exiting."; exit 0 ;;
             *)
-                warn "Invalid — choose 0–4." ;;
+                warn "Invalid — choose 0 or 1." ;;
         esac
     done
 }
@@ -1518,5 +1492,5 @@ select_box() {
 # ENTRY POINT
 # =============================================================================
 
-select_team_number
+setup_team
 select_box
